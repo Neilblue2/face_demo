@@ -7,6 +7,7 @@ def evaluate_embedding_quality(emb):
     """
     if emb is None:
         return 0.0
+        
 
     # 1. L2 norm（InsightFace 正常≈1）
     norm = np.linalg.norm(emb)
