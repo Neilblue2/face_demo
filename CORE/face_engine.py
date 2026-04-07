@@ -46,6 +46,7 @@ def load_db_features():
 
         if user_id not in user_dict:
             user_dict[user_id] = {
+                "id": user_id,
                 "name": name,
                 "embeddings": []
             }
@@ -81,9 +82,12 @@ def recognize(emb, db_features):
 
             if score > best_score:
                 best_score = score
-                best_user = user["name"]
+                best_user = user
 
-    return best_user, best_score
+    if best_user == "Unknown":
+        return None, "Unknown", best_score
+
+    return best_user["id"], best_user["name"], best_score
 
 
 # =========================
@@ -117,11 +121,12 @@ def detect_and_recognize(frame, db_features):
         emb = face.embedding
         bbox = face.bbox.astype(int)
 
-        name, score = recognize(emb, db_features)
+        user_id, name, score = recognize(emb, db_features)
         stable_name, stable_score = get_stable_result(name, score)
 
         results.append({
             "bbox": bbox,
+            "user_id": user_id,
             "name": stable_name,
             "score": stable_score
         })
