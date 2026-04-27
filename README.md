@@ -1,67 +1,112 @@
-# 基于深度学习人脸识别技术的课堂签到系统设计
+# 基于深度学习人脸识别技术的课堂签到系统
 
-本项目基于 InsightFace 提取人脸特征，PyQt5 构建桌面签到界面，MySQL 做后台用户与特征管理，目标是为课堂签到提供一个集识别、注册与管理于一体的原型系统。
+本项目是一个基于 `PyQt5 + InsightFace + MySQL` 的课堂签到系统，支持实时人脸识别签到、用户注册、课程管理、课程名单维护和签到导出。
 
-## 项目核心文件
-- `main.py`：程序入口，启动 PyQt5 `MainWindow` 并在桌面应用中加载各个功能页面。
-- `gui/main_window.py`：左侧菜单 + `QStackedWidget` 页面容器，协调实时识别、注册与用户管理视图。
-- `gui/face_page.py`：实时画面流 + `CORE.face_engine.detect_and_recognize`，在摄像头画面上叠加识别框与置信度。
-- `gui/register_page.py`：采集 5 张高质量 embedding 并写入 `users` / `face_feature` 表，提供学号/姓名输入与注册按钮。
-- `gui/user_page.py`：未来用户管理占位页，可以扩展删除/编辑操作。
-- `CORE/face_engine.py`：封装 InsightFace 初始化、多帧稳定投票、数据库特征加载与识别逻辑，供 GUI 复用。
-- `CORE/db.py`：MySQL 连接工厂，确保项目不同脚本都能使用统一的 `face_db` 账户与参数。
-- `face_utils.py`：暴露 `load_image`、`extract_embedding` 与 `cosine_similarity`，对 InsightFace 的输入/输出做规范化，其他脚本可直接复用。
-- `embedding_manager.py`：面对数据库中的 embedding 提供质量评估、删除低质量、限制每人数量、插入操作，可用于离线清洗。
-- `register.py` / `register_multi.py`：单人/多人注册示例，`register_multi.py` 还包含采集多张图片并计算平均 embedding 的流程，适合作为批处理脚本。
-- `recognize.py` / `recognize_muti.py`：离线图像与摄像头识别示例，`recognize_muti.py` 复用投票逻辑，并展示如何从数据库加载多条 embedding 做匹配。
-- `data/`：
-  - `data/images/`：原始人脸照片用于测试或单人注册脚本。
-  - `data/embeddings/`：`np.save` 的 embedding 文件，可被 `recognize.py` 加载。
-  - `data/register/`：批量注册时存放多个用户的图片子目录（每个子目录一名学生）。
-- `note.md`：记录常用 MySQL 命令（`mysql -u face -p face_db`、`SHOW TABLES;`、`SELECT * FROM users;` 等），可直接复用进入数据库检查数据。
+## 当前系统功能
+- 实时签到：摄像头识别人脸，自动判断当前课程并写入签到记录。
+- 用户注册：采集 5 张人脸特征后入库（`users` + `face_feature`）。
+- 用户管理：新增、编辑、删除用户，并展示每位用户的 embedding 数量。
+- 课程管理：创建/修改/删除课程，导入课程名单，手动加减课程成员。
+- 签到导出：可按课程或全部导出签到记录（CSV/XLSX）。
+- 首页看板：显示当前课程、实到/未到统计与名单。
+
+## 项目结构（核心）
+- `main.py`：程序入口。
+- `gui/main_window.py`：主窗口、菜单、管理员模式切换。
+- `gui/home_page.py`：当前课程统计看板（实到/未到）。
+- `gui/face_page.py`：摄像头识别与签到逻辑。
+- `gui/face_thread.py`：识别线程，循环采集并调用识别引擎。
+- `gui/register_page.py`：人脸采集注册页（采集 5 张后写库）。
+- `gui/course_page.py`：课程管理、名单导入、签到导出。
+- `gui/user_page.py`：用户管理（增删改）。
+- `CORE/face_engine.py`：检测识别引擎封装（支持多引擎模式）。
+- `CORE/db.py`：MySQL 连接配置。
+- `embedding_manager.py`：embedding 质量维护脚本。
+- `register_multi.py`：离线批量注册示例脚本。
 
 ## 环境依赖
-1. 安装 Python 库：
-   ```bash
-   pip install numpy opencv-python insightface PyQt5 pymysql
-   ```
-2. 如果要启用 `YOLOv5-Face + dlib` 引擎，额外安装：
-   ```bash
-   pip install onnxruntime dlib
-   ```
-3. 配置 MySQL：确保 `face_db` 数据库存在，并至少包含 `users` 与 `face_feature` 表（`note.md` 提供常用查询命令）。
-   - `CORE/db.py` 默认连接 `127.0.0.1:3306`，用户 `face`，密码 `face123`。
+先安装基础依赖：
 
-## 数据库 & 表结构提示
-- `users(name, student_id)` 存学号/姓名。
-- `face_feature(user_id, embedding, quality)` 存 embedding blob 与可选质量分数。
-- `embedding_manager` 中的 `evaluate_embedding_quality` 以 L2 norm 稳定度给出 0～1 分数，其他脚本可引用此函数统一判断。
+```bash
+pip install numpy opencv-python insightface PyQt5 pymysql
+```
 
-## 运行命令
-- 运行界面：`python main.py`，打开完整 CDT (Camera-Detection-Tracking) 界面。
-- 单人注册：`python register.py`（直接从 `data/images/{name}.jpg` 抽取 embedding 并保存到 `data/embeddings`）。
-- 批量注册：`python register_multi.py`，示例参数注册学号 `2023001`，可自行替换 `student_id`/`name`/`img_dir`。
-- 单张图像识别：`python recognize.py`，对比 `data/embeddings/{user}.npy` 判断是否通过。
-- 摄像头识别：`python recognize_muti.py`，内部使用 `detect_and_recognize` + 多帧投票逻辑，实时弹框识别结果。
+如果要使用课程名单 Excel 导入/签到导出 `.xlsx`：
 
-## 引擎切换（可选）
-- 默认引擎：`split`（RetinaFace + ArcFace）。
-- 可用引擎：`unified`、`split`、`yolov5face_dlib`。
-- 注意：`yolov5face_dlib` 生成的是 dlib 128 维特征，与 InsightFace 512 维特征不兼容。切换后需重新采集注册人脸数据。
-- 通过环境变量切换：
-  ```bash
-  FACE_ENGINE_MODE=yolov5face_dlib \
-  YOLOV5FACE_ONNX_PATH=models/yolov5s-face.onnx \
-  DLIB_SHAPE_PREDICTOR_PATH=models/shape_predictor_68_face_landmarks.dat \
-  DLIB_FACE_REC_PATH=models/dlib_face_recognition_resnet_model_v1.dat \
-  python main.py
-  ```
+```bash
+pip install openpyxl
+```
 
-## 可选维护命令
-- `python -c "from embedding_manager import limit_user_embeddings; limit_user_embeddings(5)"`：限制每位用户 embedding 数量。
-- `python -c "from embedding_manager import delete_low_quality_embeddings; delete_low_quality_embeddings(0.6)"`：根据质量阈值清理旧 embedding。
-- `python -c "from embedding_manager import delete_user; delete_user(1)"`：删除指定用户（需替换 ID）。
+如果要启用 `YOLOv5-Face + dlib` 引擎：
 
-## 其他说明
-- `gui/register_page.py` 与 `register_multi.py` 中都使用 `get_conn` 以事务方式写入 `users` + `face_feature`，注册后 `FacePage` 会在下一次加载时自动读取新数据。
-- `data/embeddings` 与 `data/register` 可自由扩展，但最佳做法是每人专用文件夹保存多张图片，提高平均 embedding 质量。
+```bash
+pip install onnxruntime dlib
+```
+
+## 数据库配置
+数据库连接在 `CORE/db.py` 中，当前默认：
+- host: `127.0.0.1`
+- port: `3306`
+- user: `face`
+- password: `face123`
+- database: `face_db`
+
+可参考 `note.md` 里的常用 MySQL 命令检查数据。
+
+## 必要数据表
+当前系统代码依赖以下表：
+- `users`：用户基本信息（至少包含 `id`, `name`, `student_id`, `class_name`, `major`）。
+- `face_feature`：人脸特征（至少包含 `id`, `user_id`, `embedding`, `quality`）。
+- `courses`：课程信息（`id`, `name`, `start_time`, `end_time`）。
+- `course_roster`：课程名单（`course_id`, `user_id`）。
+- `attendance`：签到记录（`id`, `user_id`, `course_id`, `course_name`, `checkin_time`）。
+
+## 运行
+启动桌面系统：
+
+```bash
+python main.py
+```
+
+管理员入口：
+- 在主界面点击“后台管理”
+- 密码默认为 `admin123`（定义在 `gui/main_window.py`）
+
+## 签到流程说明（当前实现）
+1. `FacePage` 读取摄像头帧并做人脸识别。
+2. 根据识别用户查询“当前时间是否存在进行中的课程”。
+3. 若用户在该课程名单中且未签到，则写入 `attendance`。
+4. 若不在名单、重复签到或无当前课程，会给出对应提示。
+
+## 人脸引擎模式
+`CORE/face_engine.py` 支持 3 种模式：
+- `split`（默认）：RetinaFace 检测 + ArcFace 识别。
+- `unified`：InsightFace `buffalo_l` 一体化。
+- `yolov5face_dlib`：YOLOv5-Face 检测 + dlib 识别。
+
+通过环境变量切换：
+
+```bash
+FACE_ENGINE_MODE=yolov5face_dlib \
+YOLOV5FACE_ONNX_PATH=models/yolov5s-face.onnx \
+DLIB_SHAPE_PREDICTOR_PATH=models/shape_predictor_68_face_landmarks.dat \
+DLIB_FACE_REC_PATH=models/dlib_face_recognition_resnet_model_v1.dat \
+python main.py
+```
+
+注意：
+- `yolov5face_dlib` 产生 128 维 dlib 特征。
+- `split/unified` 使用 InsightFace 特征（通常 512 维）。
+- 两类特征不兼容，切换引擎后需要重新采集注册数据。
+
+## 其他脚本
+- `register.py`：单图注册到 `data/embeddings` 的示例。
+- `recognize.py`：单图识别示例。
+- `recognize_muti.py`：旧版摄像头识别示例（独立于 GUI）。
+- `register_multi.py`：按目录批量注册到数据库，含质量过滤与均值 embedding。
+- `embedding_manager.py`：低质量清理、每人 embedding 限制、插入 embedding 等工具函数。
+
+## 常见问题
+- 摄像头打不开：检查是否被其他程序占用。
+- 没有识别结果：确认数据库中已有 `face_feature` 数据，且引擎模式与特征维度一致。
+- 导入/导出 xlsx 失败：安装 `openpyxl`。
