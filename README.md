@@ -25,19 +25,21 @@
 - `register_multi.py`：离线批量注册示例脚本。
 
 ## 环境依赖
-先安装基础依赖：
+推荐先使用项目内的依赖文件安装：
 
 ```bash
-pip install numpy opencv-python insightface PyQt5 pymysql
+pip install -r requirements.txt
 ```
 
-如果要使用课程名单 Excel 导入/签到导出 `.xlsx`：
+如果 `requirements.txt` 未包含可选功能依赖，可按需补装：
+
+- 课程名单 Excel 导入/签到导出 `.xlsx`：
 
 ```bash
 pip install openpyxl
 ```
 
-如果要启用 `YOLOv5-Face + dlib` 引擎：
+- 启用 `YOLOv5-Face + dlib` 引擎：
 
 ```bash
 pip install onnxruntime dlib
