@@ -1,0 +1,10 @@
+dlib==20.0.1
+insightface==0.7.3
+numpy==2.4.4
+onnxruntime==1.19.2
+onnxruntime_gpu==1.19.2
+opencv_python_headless==4.13.0.92
+openpyxl==3.1.5
+pymysql==1.1.2
+PyQt5==5.15.11
+pyqt5_sip==12.17.1
