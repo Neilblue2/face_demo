@@ -1,13 +1,13 @@
 import cv2
 import time
 from datetime import datetime
-from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QMessageBox, QPushButton
-from PyQt5.QtCore import Qt
+from PyQt5.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QMessageBox, QPushButton
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QImage, QPixmap
-from PyQt5.QtCore import QTimer
 
-from CORE.face_engine import load_db_features, detect_and_recognize
+from CORE.face_engine import load_db_features, get_engine_mode
 from CORE.db import get_conn
+from gui.face_thread import FaceThread
 
 
 class FacePage(QWidget):
@@ -19,45 +19,62 @@ class FacePage(QWidget):
         self.label.setAlignment(Qt.AlignCenter)
         self.label.setStyleSheet("background-color: #000000;")
 
-        self.loading_label = QLabel("正在加载中...")
+        self.engine_label = QLabel()
+        self.engine_label.setAlignment(Qt.AlignCenter)
+        self.engine_label.setStyleSheet("color: #666666; font-size: 13px;")
+
+        self.runtime_label = QLabel("摄像头: 未开启 | 识别: 未开始 | 模型: 未加载")
+        self.runtime_label.setAlignment(Qt.AlignCenter)
+        self.runtime_label.setStyleSheet("color: #333333; font-size: 14px;")
+
+        self.loading_label = QLabel("等待点击“开始识别”")
         self.loading_label.setAlignment(Qt.AlignCenter)
         self.loading_label.setStyleSheet("color: #ffffff; font-size: 16px;")
 
         self.status_label = QLabel()
+        self.status_label.setTextFormat(Qt.RichText)
         self.status_label.setAlignment(Qt.AlignCenter)
-        self.status_label.setStyleSheet("color: #ff4444; font-size: 18px;")
+        self.status_label.setStyleSheet("font-size: 18px;")
 
         self.btn_start = QPushButton("开始识别")
+        self.btn_stop = QPushButton("停止识别")
+        self.btn_stop.setEnabled(False)
+
+        btn_layout = QHBoxLayout()
+        btn_layout.addWidget(self.btn_start)
+        btn_layout.addWidget(self.btn_stop)
 
         layout = QVBoxLayout()
         layout.addWidget(self.label)
+        layout.addWidget(self.engine_label)
+        layout.addWidget(self.runtime_label)
         layout.addWidget(self.loading_label)
         layout.addWidget(self.status_label)
-        layout.addWidget(self.btn_start)
+        layout.addLayout(btn_layout)
 
         self.setLayout(layout)
 
-        self.cap = None
         self.db_features = load_db_features()
         self.name_to_id = self._build_name_index(self.db_features)
-        self.timer = QTimer()
-        self.timer.timeout.connect(self.update_frame)
+        self.face_thread = None
         self.last_popup_time = {}
         self.recognizing = False
+        self.camera_ready = False
+        self.model_ready = False
 
         self.btn_start.clicked.connect(self.start_recognition)
+        self.btn_stop.clicked.connect(self.stop_recognition)
+        self._update_engine_label()
+        self._update_runtime_label()
 
-    def update_frame(self):
-        if self.cap is None or not self.cap.isOpened():
-            return
+    def _on_thread_error(self, msg):
+        self.loading_label.setText(msg)
+        self.camera_ready = False
+        self._update_runtime_label()
 
-        ret, frame = self.cap.read()
-
-        if not ret:
-            return
-
+    def _on_frame(self, frame, results):
         if not self.recognizing:
-            self.loading_label.setText("正在加载中...")
+            self.loading_label.setText("摄像头已开启，等待开始识别")
             self.status_label.setText("")
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w, ch = rgb.shape
@@ -65,8 +82,9 @@ class FacePage(QWidget):
             self.label.setPixmap(QPixmap.fromImage(img))
             return
 
+        self.model_ready = True
+        self._update_runtime_label()
         self.loading_label.setText("")
-        results = detect_and_recognize(frame, self.db_features)
         status_lines = []
 
         for r in results:
@@ -81,7 +99,7 @@ class FacePage(QWidget):
 
             status_text, status_color = self._handle_checkin(user_id, name)
             self._maybe_show_popup(user_id, name, status_text)
-            status_lines.append(status_text)
+            status_lines.append(self._format_status_line(status_text, status_color))
 
             color = (0,255,0) if name!="Unknown" else (0,0,255)
 
@@ -104,37 +122,79 @@ class FacePage(QWidget):
         img = QImage(rgb.data, w, h, ch*w, QImage.Format_RGB888)
 
         self.label.setPixmap(QPixmap.fromImage(img))
-        self.status_label.setText("\n".join(status_lines))
+        self.status_label.setText("<br>".join(status_lines))
+
+    def _update_engine_label(self):
+        mode = get_engine_mode()
+        if mode == "split":
+            mode_name = "两段式 RetinaFace + ArcFace"
+        elif mode == "yolov5face_dlib":
+            mode_name = "YOLOv5-Face + dlib"
+        else:
+            mode_name = "一体化 buffalo_l"
+        self.engine_label.setText(f"当前引擎: {mode_name}")
+
+    def _update_runtime_label(self):
+        cam = "已开启" if self.camera_ready else "未开启"
+        rec = "运行中" if self.recognizing else "未开始"
+        model = "已加载" if self.model_ready else "未加载"
+        self.runtime_label.setText(f"摄像头: {cam} | 识别: {rec} | 模型: {model}")
+
+    def _format_status_line(self, text, color):
+        r, g, b = color
+        return f'<span style="color: rgb({r},{g},{b});">{text}</span>'
 
     def refresh_db_features(self):
         self.db_features = load_db_features()
         self.name_to_id = self._build_name_index(self.db_features)
+        if self.face_thread is not None:
+            self.face_thread.refresh_db_features()
 
     # =========================
     # 摄像头控制
     # =========================
     def start_camera(self):
-
-        if self.cap is None or not self.cap.isOpened():
-            self.cap = cv2.VideoCapture(0)
-
-        if self.cap.isOpened() and not self.timer.isActive():
-            self.timer.start(30)
+        if self.face_thread is not None and self.face_thread.isRunning():
+            return
+        self.face_thread = FaceThread(camera_index=0)
+        self.face_thread.frame_signal.connect(self._on_frame)
+        self.face_thread.error_signal.connect(self._on_thread_error)
+        self.face_thread.set_recognizing(self.recognizing)
+        self.face_thread.start()
+        self.camera_ready = True
+        self.model_ready = False
+        self._update_runtime_label()
 
     def stop_camera(self):
-
-        if self.timer.isActive():
-            self.timer.stop()
-
-        if self.cap is not None:
-            self.cap.release()
-            self.cap = None
+        if self.face_thread is not None:
+            self.face_thread.stop()
+            self.face_thread = None
         self.recognizing = False
-        self.loading_label.setText("正在加载中...")
+        self.camera_ready = False
+        self.model_ready = False
+        self.loading_label.setText("等待点击“开始识别”")
         self.status_label.setText("")
+        self.btn_start.setEnabled(True)
+        self.btn_stop.setEnabled(False)
+        self._update_runtime_label()
 
     def start_recognition(self):
+        self.start_camera()
         self.recognizing = True
+        if self.face_thread is not None:
+            self.face_thread.set_recognizing(True)
+        self.btn_start.setEnabled(False)
+        self.btn_stop.setEnabled(True)
+        self._update_runtime_label()
+
+    def stop_recognition(self):
+        self.recognizing = False
+        if self.face_thread is not None:
+            self.face_thread.set_recognizing(False)
+        self.btn_start.setEnabled(True)
+        self.btn_stop.setEnabled(False)
+        self.loading_label.setText("识别已停止，可点击“开始识别”继续")
+        self._update_runtime_label()
 
     def _build_name_index(self, db_features):
         index = {}

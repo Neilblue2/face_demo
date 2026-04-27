@@ -13,6 +13,7 @@ class UserPage(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.setObjectName("UserPage")
 
         # =========================
         # 表单
@@ -70,6 +71,20 @@ class UserPage(QWidget):
         self.btn_add.setStyleSheet("color: #2e7d32;")
         self.btn_update.setStyleSheet("color: #1976d2;")
         self.btn_delete.setStyleSheet("color: #d32f2f;")
+        self.setStyleSheet("""
+        QWidget#UserPage QPushButton {
+            color: #1f2937;
+            background-color: rgba(255, 255, 255, 240);
+            border: 1px solid rgba(0, 0, 0, 50);
+            border-radius: 6px;
+        }
+        QWidget#UserPage QPushButton:hover {
+            background-color: rgba(245, 245, 245, 245);
+        }
+        QWidget#UserPage QPushButton:pressed {
+            background-color: rgba(232, 232, 232, 245);
+        }
+        """)
 
         self.setLayout(layout)
 

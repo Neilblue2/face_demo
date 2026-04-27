@@ -25,7 +25,11 @@
    ```bash
    pip install numpy opencv-python insightface PyQt5 pymysql
    ```
-2. 配置 MySQL：确保 `face_db` 数据库存在，并至少包含 `users` 与 `face_feature` 表（`note.md` 提供常用查询命令）。
+2. 如果要启用 `YOLOv5-Face + dlib` 引擎，额外安装：
+   ```bash
+   pip install onnxruntime dlib
+   ```
+3. 配置 MySQL：确保 `face_db` 数据库存在，并至少包含 `users` 与 `face_feature` 表（`note.md` 提供常用查询命令）。
    - `CORE/db.py` 默认连接 `127.0.0.1:3306`，用户 `face`，密码 `face123`。
 
 ## 数据库 & 表结构提示
@@ -39,6 +43,19 @@
 - 批量注册：`python register_multi.py`，示例参数注册学号 `2023001`，可自行替换 `student_id`/`name`/`img_dir`。
 - 单张图像识别：`python recognize.py`，对比 `data/embeddings/{user}.npy` 判断是否通过。
 - 摄像头识别：`python recognize_muti.py`，内部使用 `detect_and_recognize` + 多帧投票逻辑，实时弹框识别结果。
+
+## 引擎切换（可选）
+- 默认引擎：`split`（RetinaFace + ArcFace）。
+- 可用引擎：`unified`、`split`、`yolov5face_dlib`。
+- 注意：`yolov5face_dlib` 生成的是 dlib 128 维特征，与 InsightFace 512 维特征不兼容。切换后需重新采集注册人脸数据。
+- 通过环境变量切换：
+  ```bash
+  FACE_ENGINE_MODE=yolov5face_dlib \
+  YOLOV5FACE_ONNX_PATH=models/yolov5s-face.onnx \
+  DLIB_SHAPE_PREDICTOR_PATH=models/shape_predictor_68_face_landmarks.dat \
+  DLIB_FACE_REC_PATH=models/dlib_face_recognition_resnet_model_v1.dat \
+  python main.py
+  ```
 
 ## 可选维护命令
 - `python -c "from embedding_manager import limit_user_embeddings; limit_user_embeddings(5)"`：限制每位用户 embedding 数量。

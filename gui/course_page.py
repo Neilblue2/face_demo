@@ -13,6 +13,7 @@ class CoursePage(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.setObjectName("CoursePage")
 
         # =========================
         # 新建课程
@@ -94,6 +95,20 @@ class CoursePage(QWidget):
         self.btn_import.setStyleSheet("color: #2e7d32;")
         self.btn_add_from_users.setStyleSheet("color: #2e7d32;")
         self.btn_remove_roster.setStyleSheet("color: #d32f2f;")
+        self.setStyleSheet("""
+        QWidget#CoursePage QPushButton {
+            color: #1f2937;
+            background-color: rgba(255, 255, 255, 240);
+            border: 1px solid rgba(0, 0, 0, 50);
+            border-radius: 6px;
+        }
+        QWidget#CoursePage QPushButton:hover {
+            background-color: rgba(245, 245, 245, 245);
+        }
+        QWidget#CoursePage QPushButton:pressed {
+            background-color: rgba(232, 232, 232, 245);
+        }
+        """)
 
         self.load_courses()
         self._selected_course_id = None

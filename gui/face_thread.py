@@ -5,51 +5,43 @@ from CORE.face_engine import load_db_features, detect_and_recognize
 
 
 class FaceThread(QThread):
+    frame_signal = pyqtSignal(object, object)  # frame, results
+    error_signal = pyqtSignal(str)
 
-    frame_signal = pyqtSignal(object)
-
-    def __init__(self):
+    def __init__(self, camera_index=0):
         super().__init__()
-
-        self.running = True
-
-        self.cap = cv2.VideoCapture(0)
-
-        # 加载人脸库
+        self.camera_index = camera_index
+        self.running = False
+        self.recognizing = False
         self.db_features = load_db_features()
 
     def run(self):
+        cap = cv2.VideoCapture(self.camera_index)
+        if not cap.isOpened():
+            self.error_signal.emit("摄像头打开失败")
+            return
 
-        while self.running:
+        self.running = True
+        try:
+            while self.running:
+                ret, frame = cap.read()
+                if not ret:
+                    continue
 
-            ret, frame = self.cap.read()
+                results = []
+                if self.recognizing:
+                    results = detect_and_recognize(frame, self.db_features)
 
-            if not ret:
-                continue
+                self.frame_signal.emit(frame, results)
+        finally:
+            cap.release()
 
-            results = detect_and_recognize(frame, self.db_features)
+    def set_recognizing(self, enable):
+        self.recognizing = enable
 
-            for r in results:
-
-                x1, y1, x2, y2 = r["bbox"]
-                name = r["name"]
-                score = r["score"]
-
-                color = (0,255,0) if name!="Unknown" else (0,0,255)
-
-                cv2.rectangle(frame,(x1,y1),(x2,y2),color,2)
-
-                cv2.putText(frame,
-                            f"{name}:{score:.2f}",
-                            (x1,y1-10),
-                            cv2.FONT_HERSHEY_SIMPLEX,
-                            0.8,
-                            color,
-                            2)
-
-            self.frame_signal.emit(frame)
+    def refresh_db_features(self):
+        self.db_features = load_db_features()
 
     def stop(self):
-
         self.running = False
-        self.cap.release()
+        self.wait()

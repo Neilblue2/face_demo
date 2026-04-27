@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QImage, QPixmap
 from PyQt5.QtCore import QTimer, Qt, pyqtSignal
 
-from CORE.face_engine import app
+from CORE.face_engine import extract_faces
 from CORE.db import get_conn
 
 
@@ -18,6 +18,10 @@ class RegisterPage(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.blur_threshold = 80.0
+        self.min_face_ratio = 0.08
+        self.max_eye_tilt_ratio = 0.30
+        self.max_nose_offset_ratio = 0.35
 
         # =========================
         # 输入框
@@ -94,6 +98,41 @@ class RegisterPage(QWidget):
         self.btn_start.clicked.connect(self.start_collect)
         self.btn_register.clicked.connect(self.register_user)
 
+    def _estimate_quality(self, frame, face):
+        x1, y1, x2, y2 = face["bbox"]
+        h, w = frame.shape[:2]
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(w, x2)
+        y2 = min(h, y2)
+
+        face_area = max(0, x2 - x1) * max(0, y2 - y1)
+        frame_area = h * w
+        ratio = face_area / frame_area if frame_area > 0 else 0.0
+        if ratio < self.min_face_ratio:
+            return False, "人脸太小，请靠近摄像头"
+
+        roi = frame[y1:y2, x1:x2]
+        if roi.size == 0:
+            return False, "人脸区域无效，请重试"
+        gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+        blur_var = cv2.Laplacian(gray, cv2.CV_64F).var()
+        if blur_var < self.blur_threshold:
+            return False, "画面偏模糊，请保持稳定后再采集"
+
+        kps = face.get("kps")
+        if kps is not None and len(kps) >= 3:
+            left_eye, right_eye, nose = np.array(kps[0]), np.array(kps[1]), np.array(kps[2])
+            eye_dist = np.linalg.norm(right_eye - left_eye)
+            if eye_dist > 1e-6:
+                eye_tilt_ratio = abs(left_eye[1] - right_eye[1]) / eye_dist
+                eye_center_x = (left_eye[0] + right_eye[0]) / 2.0
+                nose_offset_ratio = abs(nose[0] - eye_center_x) / eye_dist
+                if eye_tilt_ratio > self.max_eye_tilt_ratio or nose_offset_ratio > self.max_nose_offset_ratio:
+                    return False, "请尽量正视摄像头后再采集"
+
+        return True, "质量通过"
+
     # =========================
     # 开始采集
     # =========================
@@ -123,12 +162,10 @@ class RegisterPage(QWidget):
             return
 
         self.last_frame = frame.copy()
-        faces = app.get(frame)
+        faces = extract_faces(frame)
 
         for face in faces:
-
-            bbox = face.bbox.astype(int)
-
+            bbox = face["bbox"]
             x1, y1, x2, y2 = bbox
 
             cv2.rectangle(frame,(x1,y1),(x2,y2),(0,255,0),2)
@@ -152,15 +189,30 @@ class RegisterPage(QWidget):
         faces = self.current_faces
 
         if not faces and self.last_frame is not None:
-            faces = app.get(self.last_frame)
+            faces = extract_faces(self.last_frame)
             self.current_faces = faces
 
         if not faces:
             QMessageBox.warning(self, "提示", "未检测到人脸，请调整姿态再试")
             return
+
+        if len(faces) > 1:
+            QMessageBox.warning(self, "提示", "检测到多人，请仅保留一人入镜")
+            return
+
         face = faces[0]
-        emb = face.embedding
-        emb = emb / np.linalg.norm(emb)
+        frame_for_check = self.last_frame if self.last_frame is not None else None
+        if frame_for_check is None:
+            QMessageBox.warning(self, "提示", "采集帧不可用，请重试")
+            return
+
+        ok, msg = self._estimate_quality(frame_for_check, face)
+        if not ok:
+            self.info_label.setText(f"已采集: {len(self.embeddings)}/5 | {msg}")
+            QMessageBox.warning(self, "提示", msg)
+            return
+
+        emb = face["embedding"]
         self.embeddings.append(emb)
 
         print("采集一张")

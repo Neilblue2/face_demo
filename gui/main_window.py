@@ -1,4 +1,5 @@
 import sys
+from pathlib import Path
 from PyQt5.QtWidgets import (
     QApplication, QWidget, QPushButton,
     QHBoxLayout, QVBoxLayout, QStackedWidget, QInputDialog, QMessageBox
@@ -15,6 +16,7 @@ class MainWindow(QWidget):
 
     def __init__(self):
         super().__init__()
+        self.setObjectName("MainRoot")
 
         self.setWindowTitle("人脸识别系统（普通用户）")
         self.resize(1100, 700)
@@ -42,6 +44,7 @@ class MainWindow(QWidget):
         menu_layout.addWidget(self.btn_exit_admin, 1)
 
         menu_widget = QWidget()
+        menu_widget.setObjectName("LeftMenu")
         menu_widget.setLayout(menu_layout)
         menu_widget.setFixedWidth(180)
 
@@ -49,6 +52,7 @@ class MainWindow(QWidget):
         # 页面
         # =========================
         self.stack = QStackedWidget()
+        self.stack.setObjectName("ContentStack")
 
         self.page_home = HomePage()
         self.page_face = FacePage()
@@ -94,17 +98,61 @@ class MainWindow(QWidget):
         ]
 
         for btn in buttons:
-            btn.setStyleSheet("font-size:16px;")
             btn.setMinimumHeight(60)
-
-        self.btn_course.setStyleSheet("color: #1976d2; font-size:16px;")
-        self.btn_users.setStyleSheet("color: #1976d2; font-size:16px;")
-        self.btn_exit_admin.setStyleSheet("color: #d32f2f; font-size:16px;")
 
         self.admin_password = "admin123"
         self.admin_mode = False
         self._update_admin_menu()
         self._update_window_title()
+        self._apply_theme()
+
+    def _apply_theme(self):
+        bg_path = (Path(__file__).resolve().parent.parent / "data" / "images" / "test.jpg").as_posix()
+        self.setStyleSheet(f"""
+        QWidget#MainRoot {{
+            background-image: url({bg_path});
+            background-position: center;
+            background-repeat: no-repeat;
+        }}
+        QWidget#LeftMenu {{
+            background-color: rgba(16, 34, 52, 190);
+            border-right: 1px solid rgba(255, 255, 255, 60);
+        }}
+        QStackedWidget#ContentStack {{
+            background-color: rgba(255, 255, 255, 210);
+            border-radius: 10px;
+        }}
+        QPushButton {{
+            color: #f3f7ff;
+            background-color: rgba(54, 96, 152, 220);
+            border: 1px solid rgba(255,255,255,90);
+            border-radius: 8px;
+            font-size: 16px;
+        }}
+        QPushButton:hover {{
+            background-color: rgba(73, 124, 190, 235);
+        }}
+        QPushButton:pressed {{
+            background-color: rgba(38, 80, 130, 235);
+        }}
+        QMessageBox QPushButton {{
+            color: #1f2937;
+            background-color: rgba(255, 255, 255, 245);
+            border: 1px solid rgba(0, 0, 0, 60);
+            border-radius: 6px;
+            min-width: 72px;
+            padding: 4px 10px;
+        }}
+        QMessageBox QPushButton:hover {{
+            background-color: rgba(245, 245, 245, 245);
+        }}
+        QMessageBox QPushButton:pressed {{
+            background-color: rgba(232, 232, 232, 245);
+        }}
+        """)
+        self.btn_course.setStyleSheet("color: #d6e8ff;")
+        self.btn_users.setStyleSheet("color: #d6e8ff;")
+        self.btn_exit_admin.setStyleSheet("color: #ffd6d6;")
 
     def on_page_changed(self, index):
 
